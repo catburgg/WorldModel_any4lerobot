@@ -131,6 +131,7 @@ if __name__ == "__main__":
         help="Repository identifier on Hugging Face: a community or a user name `/` the name of the dataset "
         "(e.g. `lerobot/pusht`, `cadene/aloha_sim_insertion_human`).",
     )
+    # test path: /mnt/project/public/world_model/LeRobot/HumanData/EgoDex/test/tmp
     parser.add_argument(
         "--root",
         type=str,
