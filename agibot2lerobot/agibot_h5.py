@@ -3,14 +3,17 @@ THIS_DIR = pathlib.Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
+import json
 import argparse
 import gc
 import shutil
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed,
+    ProcessPoolExecutor
 )
 from pathlib import Path
+import os
 
 import numpy as np
 import ray
@@ -31,6 +34,8 @@ from lerobot.common.datasets.utils import (
 )
 from lerobot.common.datasets.video_utils import get_safe_default_codec
 from ray.runtime_env import RuntimeEnv
+import time
+from ray.exceptions import RayTaskError
 
 
 class AgiBotDatasetMetadata(LeRobotDatasetMetadata):
@@ -240,6 +245,7 @@ def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], num_th
     features = generate_features_from_config(agibot_world_config)
 
     if local_dir.exists():
+        raise ValueError
         shutil.rmtree(local_dir)
 
     # if not save_depth:
@@ -277,6 +283,8 @@ def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], num_th
             
             cur_subtask = 0
             for timestamp, frame_data in enumerate(frames):
+                if len(action_config) == 0:
+                    raise ValueError(f"{json_file} invalid")
                 if timestamp < action_config[0]["start_frame"] or timestamp >= action_config[-1]["end_frame"]:
                     frame_task_instruction = task_instruction
                 else:
@@ -367,35 +375,71 @@ def main(
     if debug:
         save_as_lerobot_dataset(agibot_world_config, next(tasks), num_threads_per_task, save_depth, debug)
     else:
-        runtime_env = RuntimeEnv(
-            env_vars={
-                "HDF5_USE_FILE_LOCKING": "FALSE",
-                "HF_DATASETS_DISABLE_PROGRESS_BARS": "TRUE",
-                "LD_PRELOAD": str(Path(__file__).resolve().parent / "libtcmalloc.so.4.5.3"),
-            }
-        )
-        ray.init(runtime_env=runtime_env)
-        resources = ray.available_resources()
-        cpus = int(resources["CPU"])
+        
+        # 给子进程设置环境变量，ProcessPoolExecutor 默认会继承当前进程的 env
+        os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
+        os.environ["HF_DATASETS_DISABLE_PROGRESS_BARS"] = "TRUE"
+        os.environ["OMP_NUM_THREADS"] = "1"
+        os.environ["LD_PRELOAD"] = str(Path(__file__).resolve().parent / "libtcmalloc.so.4.5.3")
 
+        # 用本机 CPU 数估算可用并行度
+        cpus = os.cpu_count() or 1
         print(f"Available CPUs: {cpus}, num_cpus_per_task: {cpus_per_task}")
 
-        remote_task = ray.remote(save_as_lerobot_dataset).options(num_cpus=cpus_per_task)
-        futures = []
-        for task in tasks:
-            futures.append(
-                (task[0].stem, remote_task.remote(agibot_world_config, task, num_threads_per_task, save_depth, debug))
-            )
+        # 模拟 Ray 里 num_cpus_per_task 的概念：每个任务占多少 CPU，就把 worker 数压一下
+        max_workers = max(1, cpus // cpus_per_task)
 
-        for task, future in futures:
-            try:
-                ray.get(future)
-            except Exception as e:
-                print(f"Exception occurred for {task}")
-                with open("output.txt", "a") as f:
-                    f.write(f"{task}, exception details: {str(e)}\n")
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_to_task = {}
+            for task in tasks:
+                future = executor.submit(
+                    save_as_lerobot_dataset,
+                    agibot_world_config,
+                    task,
+                    num_threads_per_task,
+                    save_depth,
+                    debug,
+                )
+                future_to_task[future] = task[0].stem
 
-        ray.shutdown()
+            for future in as_completed(future_to_task):
+                task_name = future_to_task[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Exception occurred for {task_name}")
+                    with open("output.txt", "a") as f:
+                        f.write(f"{task_name}, exception details: {str(e)}\n")
+
+        # runtime_env = RuntimeEnv(
+        #     env_vars={
+        #         "HDF5_USE_FILE_LOCKING": "FALSE",
+        #         "HF_DATASETS_DISABLE_PROGRESS_BARS": "TRUE",
+        #         "LD_PRELOAD": str(Path(__file__).resolve().parent / "libtcmalloc.so.4.5.3"),
+        #     }
+        # )
+        # ray.init(runtime_env=runtime_env)
+        # resources = ray.available_resources()
+        # cpus = int(resources["CPU"])
+
+        # print(f"Available CPUs: {cpus}, num_cpus_per_task: {cpus_per_task}")
+
+        # remote_task = ray.remote(save_as_lerobot_dataset).options(num_cpus=cpus_per_task)
+        # futures = []
+        # for task in tasks:
+        #     futures.append(
+        #         (task[0].stem, remote_task.remote(agibot_world_config, task, num_threads_per_task, save_depth, debug))
+        #     )
+
+        # for task, future in futures:
+        #     try:
+        #         ray.get(future)
+        #     except Exception as e:
+        #         print(f"Exception occurred for {task}")
+        #         with open("output.txt", "a") as f:
+        #             f.write(f"{task}, exception details: {str(e)}\n")
+
+        # ray.shutdown()
 
 
 if __name__ == "__main__":
