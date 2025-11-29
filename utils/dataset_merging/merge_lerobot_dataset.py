@@ -1412,7 +1412,8 @@ def merge_datasets(
                 folder_task_mapping[folder][old_index] = task_desc_to_new_index[task_desc]
 
             # Process all episodes from this folder
-            for episode in episodes:
+            from tqdm import tqdm
+            for episode in tqdm(episodes, desc=f"Merging {os.path.basename(folder)}", unit="ep"):
                 old_index = episode["episode_index"]
                 new_index = total_episodes
 

@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 PYTHON_EXE = "/mnt/afs/zhangxuheng/miniconda3/envs/lerobot2.1/bin/python"
 CONVERT_SCRIPT = "/mnt/home/zhangxuheng/code/world_model/any4lerobot/utils/version_convert/convert_dataset_v20_to_v21.py"
 
-MAX_WORKERS = 64
+MAX_WORKERS = 16
 
 def process_single_task(task_dir: Path):
     task_name = task_dir.name
