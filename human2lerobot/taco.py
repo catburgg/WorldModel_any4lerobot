@@ -1,11 +1,12 @@
 """
 Usage:
-  - run: python final2.py \
+  - run: python taco.py \
         --taco_root /path/to/TACO/dataset \
         --output_root /path/to/save/LeRobot_v2.1_dataset \
-        --repo_id your_github_repo_id \
         --fps fps
 """
+# 需要数据在世界坐标系下
+# use {word1} to {word2} the {word3}
 
 import os
 import json
@@ -131,7 +132,6 @@ def build_episode_for_chunk(episode_meta: Dict[str,Any], taco_root: Path, out_da
     triplet_name = episode_meta["triplet_name"]
     sequence_name = episode_meta["sequence_name"]
     n_frames = int(episode_meta["length"])
-    rel = Path(episode_meta["relative_path"])
     chunk_idx = ep_idx // CHUNKS_SIZE
     chunk_name = f"chunk-{chunk_idx:03d}"
     out_data_chunk = out_data_chunk1 / chunk_name
@@ -165,9 +165,14 @@ def build_episode_for_chunk(episode_meta: Dict[str,Any], taco_root: Path, out_da
     frames_camera_structs = { cam: [] for cam in camera_to_srcpath.keys() }
     states_list = []
     actions_list = []
-    mano_keypoints = []
+    wrist_left = []
+    wrist_right = []
+    mano_keypoints_left = []
+    mano_keypoints_right = []
     camera_intrinsics = []
     camera_extrinsics = []
+    action_texts = []
+    task_texts = []
     timestamps = []
     next_done = []
     frame_indices = []
@@ -196,7 +201,7 @@ def build_episode_for_chunk(episode_meta: Dict[str,Any], taco_root: Path, out_da
         lh_pose = lh[f"{fi+1:05d}"]["hand_pose"].unsqueeze(0)
         lh_trans = lh[f"{fi+1:05d}"]["hand_trans"].unsqueeze(0)
         
-        def get_wrist_pose(pose_tensor, trans, mano_layer): # (1,48), (1,3) -> (1,7)
+        def get_wrist_pose(pose_tensor, trans, mano_layer): # (1,48), (1,3) -> (1,6)
             pose = pose_tensor.numpy().squeeze(0)  # (48,)
             wrist_axisangle = pose[:3]
             R_mat = R.from_rotvec(wrist_axisangle)
@@ -205,7 +210,7 @@ def build_episode_for_chunk(episode_meta: Dict[str,Any], taco_root: Path, out_da
             # 提取手腕的绝对位置
             wrist_pos = rh_joints[0] if mano_layer.side == "right" else lh_joints[0]
             x, y, z = wrist_pos
-            return torch.tensor([x, y, z, r, p, y, 0.0])
+            return torch.tensor([x, y, z, r, p, y])
         
         mano_layer_r = ManoLayer(mano_root=str(models_root / "mano"), 
                                use_pca=False, 
@@ -215,7 +220,7 @@ def build_episode_for_chunk(episode_meta: Dict[str,Any], taco_root: Path, out_da
         _, rh_joints = mano_layer_r(rh_pose, right_hand_shape)
         rh_joints = rh_joints + rh_trans # shape is (1,21,3)
         rh_joints = rh_joints.squeeze(0) # (21,3)
-        mano_keypoints.append(rh_joints.numpy().tolist())
+        mano_keypoints_right.append(rh_joints.numpy().tolist())
         rh_wrist_pose = get_wrist_pose(rh_pose, rh_trans, mano_layer_r)
 
         mano_layer_l = ManoLayer(mano_root=str(models_root / "mano"), 
@@ -226,13 +231,15 @@ def build_episode_for_chunk(episode_meta: Dict[str,Any], taco_root: Path, out_da
         _, lh_joints = mano_layer_l(lh_pose, left_hand_shape)
         lh_joints = lh_joints + lh_trans
         lh_joints = lh_joints.squeeze(0) # (21,3)
+        mano_keypoints_left.append(lh_joints.numpy().tolist())
         lh_wrist_pose = get_wrist_pose(lh_pose, lh_trans, mano_layer_l)
-        # 拼接左右手手腕姿态，得到(2*7,)的数组
         wrist_poses = torch.cat([lh_wrist_pose, rh_wrist_pose], dim=0)
         states_list.append(wrist_poses.numpy().tolist())
+        wrist_left.append(lh_wrist_pose.numpy().tolist())
+        wrist_right.append(rh_wrist_pose.numpy().tolist())
 
-        # action: 占位即可 (2*7, )
-        actions_list.append([0.0]*14)
+        # action: 占位即可 (2*6, )
+        actions_list.append([0.0]*12)
 
         # camera parameters
         intrinsic_p = parameter_dir / "egocentric_intrinsic.txt"
@@ -242,6 +249,12 @@ def build_episode_for_chunk(episode_meta: Dict[str,Any], taco_root: Path, out_da
         camera_intrinsics.append(intrinsic.tolist())
         camera_extrinsics.append(extrinsic.tolist())
 
+        # language annotation
+        # triplet name is (w1, w2, w3), need to split
+        w1, w2, w3 = str(triplet_name).strip("()").split(", ")
+        action_texts.append("")
+        task_texts.append(f"Use the {w2} to {w1} the {w3}.")
+
     # Convert to pyarrow arrays and write parquet
     arrays = {}
     fields = []
@@ -250,11 +263,10 @@ def build_episode_for_chunk(episode_meta: Dict[str,Any], taco_root: Path, out_da
     arrays[f"observation.images.top_head"] = pa.array(video_paths, type=pa.string())
     fields.append(pa.field(f"observation.images.top_head", pa.string()))
     combined_states_list = []
-    for ci, ce, mk, eef in zip(camera_intrinsics, camera_extrinsics, mano_keypoints, states_list): # lists of lists
+    for ci, ce, eef in zip(camera_intrinsics, camera_extrinsics, states_list): # lists of lists
         tmp = []
         tmp.extend([item for row in ci for item in row]) 
         tmp.extend([item for row in ce for item in row])
-        tmp.extend([item for row in mk for item in row])
         tmp.extend(eef)
         combined_states_list.append(tmp) # concatenated list
     arrays["observation.state"] = pa.array(combined_states_list, type=pa.list_(pa.float32())); fields.append(pa.field("observation.state", pa.list_(pa.float32())))
@@ -262,9 +274,12 @@ def build_episode_for_chunk(episode_meta: Dict[str,Any], taco_root: Path, out_da
     # 补充定义
     arrays["camera.intrinsic"] = pa.array(camera_intrinsics, type=pa.list_(pa.list_(pa.float32()))); fields.append(pa.field("camera.intrinsic", pa.list_(pa.list_(pa.float32()))))
     arrays["camera.extrinsic"] = pa.array(camera_extrinsics, type=pa.list_(pa.list_(pa.float32()))); fields.append(pa.field("camera.extrinsic", pa.list_(pa.list_(pa.float32()))))
-    arrays["mano_keypoints"] = pa.array(mano_keypoints, type=pa.list_(pa.list_(pa.float32()))); fields.append(pa.field("mano_keypoints", pa.list_(pa.list_(pa.float32()))))
-    arrays["eef.state"] = pa.array(states_list, type=pa.list_(pa.float32())); fields.append(pa.field("eef.state", pa.list_(pa.float32())))
-    arrays["eef.action"] = pa.array(actions_list, type=pa.list_(pa.float32())); fields.append(pa.field("eef.action", pa.list_(pa.float32())))
+    arrays["eef.left.hand"] = pa.array(mano_keypoints_left, type=pa.list_(pa.list_(pa.float32()))); fields.append(pa.field("eef.left.hand", pa.list_(pa.list_(pa.float32()))))
+    arrays["eef.right.hand"] = pa.array(mano_keypoints_right, type=pa.list_(pa.list_(pa.float32()))); fields.append(pa.field("eef.right.hand", pa.list_(pa.list_(pa.float32()))))
+    arrays["eef.left.wrist"] = pa.array(wrist_left, type=pa.list_(pa.float32())); fields.append(pa.field("eef.left.wrist", pa.list_(pa.float32())))
+    arrays["eef.right.wrist"] = pa.array(wrist_right, type=pa.list_(pa.float32())); fields.append(pa.field("eef.right.wrist", pa.list_(pa.float32())))
+    arrays["action_text"] = pa.array(action_texts, type=pa.string()); fields.append(pa.field("action_text", pa.string()))
+    arrays["task_text"] = pa.array(task_texts, type=pa.string()); fields.append(pa.field("task_text", pa.string()))
     # 补充定义结束
     arrays["episode_index"] = pa.array(episode_indices, type=pa.int64()); fields.append(pa.field("episode_index", pa.int64()))
     arrays["frame_index"] = pa.array(frame_indices, type=pa.int64()); fields.append(pa.field("frame_index", pa.int64()))
@@ -375,23 +390,21 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Convert TACO dataset to LeRobot dataset")
     parser.add_argument("--taco_root", type=Path, required=True)
     parser.add_argument("--output_root", type=Path, required=True)
-    parser.add_argument("--repo_id", type=str, required=True)
     parser.add_argument("--fps", type=int, default=30)
     return parser.parse_args()
 
 def main():
     args = parse_args()
-    global TACO_ROOT, LEROBOT_SAVE_ROOT, REPO_ID, FPS
+    global TACO_ROOT, LEROBOT_SAVE_ROOT, FPS
     TACO_ROOT = args.taco_root
     LEROBOT_SAVE_ROOT = args.output_root
-    REPO_ID = args.repo_id
     FPS = args.fps
 
     print("Scanning TACO dataset...")
     sequences = scan_taco_sequences(TACO_ROOT)
     print(f"Found {len(sequences)} sequences / episodes")
 
-    out_root = LEROBOT_SAVE_ROOT / REPO_ID
+    out_root = LEROBOT_SAVE_ROOT
     meta_root = out_root / "meta"
     ensure_dir(out_root)
     ensure_dir(meta_root)
@@ -501,7 +514,7 @@ def main():
             continue
 
         C, H, W = shape
-        # observation.images.<cam_key> (cam_key already includes prefix)
+        # observation.images.<cam_key> 
         features[cam_key] = {
             "dtype": "video",
             "shape": [H, W, C],
@@ -517,14 +530,17 @@ def main():
             }
         }
 
-    features["observation.state"] = {"dtype": "list[float32]", "shape": [102]} # 102=9+16+21*3+2*7
-    features["action"] = {"dtype": "list[float32]", "shape": [14]}
+    features["observation.state"] = {"dtype": "list[float32]", "shape": [None]} 
+    features["action"] = {"dtype": "list[float32]", "shape": [12]}
     # 补充定义
     features["camera.intrinsic"] = {"dtype": "list[list[float32]]", "shape": [3,3]}
     features["camera.extrinsic"] = {"dtype": "list[list[float32]]", "shape": [4,4]}
-    features["mano_keypoints"] = {"dtype": "list[list[float32]]", "shape": [21,3]} 
-    features["eef.state"] = {"dtype": "list[float32]", "shape": [14]}
-    features["eef.action"] = {"dtype": "list[float32]", "shape": [14]}
+    features["eef.left.hand"] = {"dtype": "list[list[float32]]", "shape": [21,3]} 
+    features["eef.right.hand"] = {"dtype": "list[list[float32]]", "shape": [21,3]}
+    features["eef.left.wrist"] = {"dtype": "list[float32]", "shape": [6]}
+    features["eef.right.wrist"] = {"dtype": "list[float32]", "shape": [6]}
+    features["annotation.language.action_text"] = {"dtype": "string", "shape": [1]}
+    features["annotation.language.task_text"] = {"dtype": "string", "shape": [1]}
     # 补充定义结束
     features["episode_index"] = {"dtype": "int64", "shape": [1]}
     features["frame_index"] = {"dtype": "int64", "shape": [1]}
@@ -534,7 +550,6 @@ def main():
 
     info = {
         "codebase_version": CODEBASE_VERSION,
-        "repo_id": REPO_ID,
         "fps": FPS,
         "features": features,
         "total_episodes": total_episodes,
@@ -559,32 +574,6 @@ def main():
     print(f"meta/episodes.jsonl: {episodes_jsonl_path}")
     print(f"meta/episodes_stats.jsonl: {episodes_stats_jsonl_path}")
     print(f"meta/info.json: {info_json_path}")
-
-    # def get_lerobot_dataset_class():
-    #     try:
-    #         module = importlib.import_module("lerobot.common.datasets.lerobot_dataset")
-    #     except ModuleNotFoundError as exc:
-    #         raise ImportError(
-    #             "需要安装 'huggingface-lerobot' 才能生成 LeRobot 数据集：pip install huggingface-lerobot"
-    #         ) from exc
-    #     return getattr(module, "LeRobotDataset")
-    
-    # LeRobotDataset = get_lerobot_dataset_class()
-    # dataset = LeRobotDataset.create(
-    #     repo_id = REPO_ID,
-    #     root = str(out_root),
-    #     fps = FPS,
-    #     robot_type = ROBOT_TYPE,
-    #     features = features,
-    # )
-    # api = HfApi()
-    # api.upload_folder(
-    #     folder_path=LEROBOT_SAVE_ROOT,
-    #     repo_id=REPO_ID,
-    #     repo_type="dataset"
-    # )
-    # print(f"Uploaded dataset to Hugging Face Hub: {REPO_ID}")
-
 
 if __name__ == "__main__":
     main()
