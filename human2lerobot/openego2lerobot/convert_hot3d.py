@@ -29,7 +29,6 @@ from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
 from utils import AriaCamera, se3_to_6d
 from schemas import Hot3DLeRobotFeatures
 from lerobot_converter import BaseDatasetConverter, ConvertibleEpisode
-from visualize_debugger import visualize_dataset
 
 class Hot3DConverter(BaseDatasetConverter):
     def __init__(self, output_root, repo_id, assets_file_path, mano_file_path, fps = 10, num_workers=1):
@@ -70,7 +69,7 @@ class Hot3DConverter(BaseDatasetConverter):
 
         # --- 1. Create Video ---
         camera = AriaCamera(hot3d_data_provider)
-        length = len(camera.timestamps) //3
+        length = (len(camera.timestamps) + 2) //3
         timestamps = camera.timestamps
         video = np.zeros([length, self.height, self.width, 3], dtype=np.uint8)
 
@@ -124,15 +123,17 @@ class Hot3DConverter(BaseDatasetConverter):
                 time_query_options=TimeQueryOptions.CLOSEST,
                 time_domain=TimeDomain.TIME_CODE,
             )
-            hand_pose_collection = hand_poses_with_dt.pose3d_collection
-            for hand_pose_data in hand_pose_collection.poses.values():
-                handedness_label = hand_pose_data.handedness_label()
-                # T_world_wrist = hand_pose_data.wrist_pose
-                hand_landmarks = hand_data_provider.get_hand_landmarks(
-                    hand_pose_data
-                )
-                mano_coord[handedness_label][i//3] = hand_landmarks.numpy()
-                wrist_pose[handedness_label][i//3] = se3_to_6d(hand_pose_data.wrist_pose)
+            if(hand_poses_with_dt is not None):
+                print(i)
+                hand_pose_collection = hand_poses_with_dt.pose3d_collection
+                for hand_pose_data in hand_pose_collection.poses.values():
+                    handedness_label = hand_pose_data.handedness_label()
+                    # T_world_wrist = hand_pose_data.wrist_pose
+                    hand_landmarks = hand_data_provider.get_hand_landmarks(
+                        hand_pose_data
+                    )
+                    mano_coord[handedness_label][i//3] = hand_landmarks.numpy()
+                    wrist_pose[handedness_label][i//3] = se3_to_6d(hand_pose_data.wrist_pose)
 
         # print("OOOOO", episode_name)
 
