@@ -1,0 +1,58 @@
+{
+    "sequences": {
+        "assets": {
+            "assets": {
+                "filename": "Hot3DAssets_assets_assets.zip",
+                "sha1sum": "ef25113f88bc57c052493ff7d0c44681165719c7",
+                "file_size_bytes": 158859187,
+                "download_url": "https://scontent.xx.fbcdn.net/m1/v/t6/An8L5T07j30tXd8ee8YG7Y3SpDKFyVpaO_kOBjKuwM-TMBX6NClbsaaUhl-jc0K8hxImIhqbVpBHx_E1L_t_X-P9Uhx6nsN7on_0Ro_CBJkv5DRZIe0L6lk0MhiD3tqN0Y0XfD9kwOwlW6Q.zip/Hot3DAssets_assets_assets.zip?_nc_gid&ccb=10-5&oh=00_Afl2QrEcNIoOoA8KZlrLnStgi3zC7DKOSrADMrqium8fzg&oe=6958A62C&_nc_sid=71efe3"
+            }
+        }
+    },
+    "sequence_config": {
+        "dataset_name": "Hot3DAssets",
+        "main": {
+            "recording": "None",
+            "mps": "None"
+        },
+        "data_groups": {
+            "assets": [
+                "106434519822892.glb",
+                "106957734975303.glb",
+                "111305855142671.glb",
+                "117658302265452.glb",
+                "125863066770940.glb",
+                "143541090750632.glb",
+                "163340972252026.glb",
+                "171735388712249.glb",
+                "183136364331389.glb",
+                "194930206998778.glb",
+                "195041665639898.glb",
+                "204462113746498.glb",
+                "208243983021975.glb",
+                "223371871635142.glb",
+                "225397651484143.glb",
+                "228358276546933.glb",
+                "232501673989606.glb",
+                "238686662724712.glb",
+                "248247003992116.glb",
+                "249541253457812.glb",
+                "253405647833885.glb",
+                "258906041248094.glb",
+                "261746112525368.glb",
+                "265826671143948.glb",
+                "270231216246839.glb",
+                "27078911029651.glb",
+                "37787722328019.glb",
+                "4111539686391.glb",
+                "5462893327580.glb",
+                "70709727230291.glb",
+                "79582884925181.glb",
+                "96945373046044.glb",
+                "98604936546412.glb",
+                "instance.json",
+                "license.txt"
+            ]
+        }
+    }
+}
