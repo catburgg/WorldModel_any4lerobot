@@ -123,17 +123,17 @@ class Hot3DConverter(BaseDatasetConverter):
                 time_query_options=TimeQueryOptions.CLOSEST,
                 time_domain=TimeDomain.TIME_CODE,
             )
-            if(hand_poses_with_dt is not None):
-                print(i)
-                hand_pose_collection = hand_poses_with_dt.pose3d_collection
-                for hand_pose_data in hand_pose_collection.poses.values():
-                    handedness_label = hand_pose_data.handedness_label()
-                    # T_world_wrist = hand_pose_data.wrist_pose
-                    hand_landmarks = hand_data_provider.get_hand_landmarks(
-                        hand_pose_data
-                    )
-                    mano_coord[handedness_label][i//3] = hand_landmarks.numpy()
-                    wrist_pose[handedness_label][i//3] = se3_to_6d(hand_pose_data.wrist_pose)
+            #if(hand_poses_with_dt is not None):
+                # print(i)
+            hand_pose_collection = hand_poses_with_dt.pose3d_collection
+            for hand_pose_data in hand_pose_collection.poses.values():
+                handedness_label = hand_pose_data.handedness_label()
+                # T_world_wrist = hand_pose_data.wrist_pose
+                hand_landmarks = hand_data_provider.get_hand_landmarks(
+                    hand_pose_data
+                )
+                mano_coord[handedness_label][i//3] = hand_landmarks.numpy()
+                wrist_pose[handedness_label][i//3] = se3_to_6d(hand_pose_data.wrist_pose)
 
         # print("OOOOO", episode_name)
 
