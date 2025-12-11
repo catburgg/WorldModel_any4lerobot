@@ -67,7 +67,7 @@ ORIGINAL_HAND_KEYS = [
 ]
 
 OTV_MAIN_INTRINSICS = np.array(
-    [[488.6662, 0.0000, 640.0000], [0.0000, 488.6662, 360.0000], [0.0000, 0.0000, 1.0000]],
+    [[146.6, 0.0000, 192.0000], [0.0000, 260.6, 192.0000], [0.0000, 0.0000, 1.0000]],
     dtype=np.float32,
 )
 
@@ -297,25 +297,29 @@ def extract_state_from_sample(sample: dict) -> np.ndarray:
         right_2d = np.array(sample["current_right_mano_ee_2d"], dtype=np.float32).reshape(-1)
         state_parts.append(np.concatenate([left_2d[:2], right_2d[:2]]))
     else:
-        state_parts.append(np.zeros(4, dtype=np.float32))
+        # state_parts.append(np.zeros(4, dtype=np.float32))
+        raise ValueError
     if "current_left_mano_trans" in sample and "current_right_mano_trans" in sample:
         left_3d = np.array(sample["current_left_mano_trans"], dtype=np.float32).reshape(-1)
         right_3d = np.array(sample["current_right_mano_trans"], dtype=np.float32).reshape(-1)
         state_parts.append(np.concatenate([left_3d[:3], right_3d[:3]]))
     else:
-        state_parts.append(np.zeros(6, dtype=np.float32))
+        # state_parts.append(np.zeros(6, dtype=np.float32))
+        raise ValueError
     if "current_left_mano_rot" in sample and "current_right_mano_rot" in sample:
         left_rot = np.array(sample["current_left_mano_rot"], dtype=np.float32).reshape(-1)
         right_rot = np.array(sample["current_right_mano_rot"], dtype=np.float32).reshape(-1)
         state_parts.append(np.concatenate([left_rot[:3], right_rot[:3]]))
     else:
-        state_parts.append(np.zeros(6, dtype=np.float32))
+        # state_parts.append(np.zeros(6, dtype=np.float32))
+        raise ValueError
     if "current_left_mano_parameters" in sample and "current_right_mano_parameters" in sample:
         left_dof = np.array(sample["current_left_mano_parameters"], dtype=np.float32).reshape(-1)
         right_dof = np.array(sample["current_right_mano_parameters"], dtype=np.float32).reshape(-1)
         state_parts.append(np.concatenate([left_dof[:15], right_dof[:15]]))
     else:
-        state_parts.append(np.zeros(30, dtype=np.float32))
+        # state_parts.append(np.zeros(30, dtype=np.float32))
+        raise ValueError
     return np.concatenate(state_parts)
 
 
@@ -360,20 +364,17 @@ def extract_action_from_sample(sample: dict, next_sample: Optional[dict] = None)
 
 def extract_eef_wrist_hand(sample: dict) -> Dict[str, np.ndarray]:
     result = {}
-    if "current_left_mano_trans" in sample and "current_left_mano_rot" in sample:
-        left_trans = np.array(sample["current_left_mano_trans"], dtype=np.float32).reshape(-1)[:3]
-        left_rot_aa = np.array(sample["current_left_mano_rot"], dtype=np.float32).reshape(-1)[:3]
-        left_rpy = axis_angle_to_rpy(left_rot_aa)
+    if "current_left_ee_cam_pose" in sample and "current_right_ee_cam_pose" in sample:
+        left_cam_pose = np.array(sample["current_left_ee_cam_pose"], dtype=np.float32).reshape(4, 4)
+        right_cam_pose = np.array(sample["current_right_ee_cam_pose"], dtype=np.float32).reshape(4, 4)
+        left_trans, left_rot_matrix = left_cam_pose[:3, 3], left_cam_pose[:3, :3]
+        right_trans, right_rot_matrix = right_cam_pose[:3, 3], right_cam_pose[:3, :3]
+        left_rpy = R.from_matrix(left_rot_matrix).as_euler('xyz', degrees=False).astype(np.float32)
+        right_rpy = R.from_matrix(right_rot_matrix).as_euler('xyz', degrees=False).astype(np.float32)
         result[EEF_LEFT_WRIST_KEY] = np.concatenate([left_trans, left_rpy])
-    else:
-        result[EEF_LEFT_WRIST_KEY] = np.zeros(6, dtype=np.float32)
-    if "current_right_mano_trans" in sample and "current_right_mano_rot" in sample:
-        right_trans = np.array(sample["current_right_mano_trans"], dtype=np.float32).reshape(-1)[:3]
-        right_rot_aa = np.array(sample["current_right_mano_rot"], dtype=np.float32).reshape(-1)[:3]
-        right_rpy = axis_angle_to_rpy(right_rot_aa)
         result[EEF_RIGHT_WRIST_KEY] = np.concatenate([right_trans, right_rpy])
     else:
-        result[EEF_RIGHT_WRIST_KEY] = np.zeros(6, dtype=np.float32)
+        raise ValueError
     if "current_left_mano_kps3d" in sample:
         left_kps = np.array(sample["current_left_mano_kps3d"], dtype=np.float32).reshape(-1)
         result[EEF_LEFT_HAND_KEY] = left_kps[:63].reshape(21, 3)
@@ -418,7 +419,7 @@ def extract_original_hand_data(sample: dict) -> Dict[str, np.ndarray]:
     return result
 
 
-def build_features(state_dim: int, action_dim: int, image_shape: tuple = (720, 1280, 3), target_fps: float = DEFAULT_TARGET_FPS) -> dict:
+def build_features(state_dim: int, action_dim: int, image_shape: tuple = (384, 384, 3), target_fps: float = DEFAULT_TARGET_FPS) -> dict:
     video_feature = {
         "dtype": "video",
         "shape": [int(x) for x in image_shape],
@@ -502,7 +503,7 @@ def convert_episode_to_lerobot(
             img_bytes = img_dataset[img_idx]["rgb_obs"]
             all_images.append(decode_image_bytes(img_bytes))
         else:
-            all_images.append(np.zeros((720, 1280, 3), dtype=np.uint8))
+            all_images.append(np.zeros((384, 384, 3), dtype=np.uint8))
     frames = []
     sampled_indices = episode_indices[::stride]
     for i, idx in enumerate(sampled_indices):
@@ -555,7 +556,7 @@ def convert_egovla_to_lerobot(
         first_img_bytes = img_dataset[img_idx]["rgb_obs"]
         image_shape = decode_image_bytes(first_img_bytes).shape
     else:
-        image_shape = (720, 1280, 3)
+        image_shape = (384, 384, 3)
     features = build_features(state_dim, action_dim, image_shape, target_fps=target_fps)
     lerobot_dataset = EgoVLADataset.create(
         repo_id="egovla_dataset",

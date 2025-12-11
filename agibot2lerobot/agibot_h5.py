@@ -1,3 +1,10 @@
+import os
+from pathlib import Path
+os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
+os.environ["HF_DATASETS_DISABLE_PROGRESS_BARS"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["LD_PRELOAD"] = str(Path(__file__).resolve().parent / "libtcmalloc.so.4.5.3")
+
 import sys, pathlib
 THIS_DIR = pathlib.Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
@@ -12,11 +19,8 @@ from concurrent.futures import (
     as_completed,
     ProcessPoolExecutor
 )
-from pathlib import Path
-import os
 
 import numpy as np
-import ray
 import torch
 from agibot_utils.agibot_utils import get_task_info, load_local_dataset
 from agibot_utils.config import AgiBotWorld_TASK_TYPE
@@ -231,10 +235,19 @@ def get_all_tasks(src_path: Path, output_path: Path):
         yield (json_file, local_dir.resolve())
 
 
-def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], num_threads, save_depth, debug):
+def write_episode_log(log_file: Path, message: str):
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(message + "\n")
+        f.flush()
+
+
+def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], num_threads, save_depth, debug, log_file: Path = None):
     json_file, local_dir = task
     print(f"processing {json_file.stem}, saving to {local_dir}")
     src_path = json_file.parent.parent
+    
+    if log_file is None:
+        log_file = Path("out.log")
     task_info = get_task_info(json_file)
     task_name = task_info[0]["task_name"]
     task_init_scene = task_info[0]["init_scene_text"]
@@ -259,11 +272,15 @@ def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], num_th
         features=features,
     )
 
+    source_fps = 30
+    target_fps = 10
+    frame_stride = source_fps // target_fps 
+
     all_subdir = [f.as_posix() for f in src_path.glob(f"observations/{task_id}/*") if f.is_dir()]
 
     all_subdir_eids = sorted([int(Path(path).name) for path in all_subdir])
 
-    if debug or not save_depth:
+    if debug:
         for eid in all_subdir_eids:
             if eid not in task_info:
                 print(f"{json_file.stem}, episode_{eid} not in task_info.json, skipping...")
@@ -282,16 +299,21 @@ def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], num_th
                 continue
             
             cur_subtask = 0
-            for timestamp, frame_data in enumerate(frames):
+            # Sample frames: every 3 frames take 1 (30fps -> 10fps)
+            for original_frame_idx in range(0, len(frames), frame_stride):
+                frame_data = frames[original_frame_idx]
+                # Calculate timestamp using source fps (30) for video extraction
+                timestamp = original_frame_idx / source_fps
+                
                 if len(action_config) == 0:
                     raise ValueError(f"{json_file} invalid")
-                if timestamp < action_config[0]["start_frame"] or timestamp >= action_config[-1]["end_frame"]:
+                if original_frame_idx < action_config[0]["start_frame"] or original_frame_idx >= action_config[-1]["end_frame"]:
                     frame_task_instruction = task_instruction
                 else:
-                    if timestamp >= action_config[cur_subtask]["end_frame"]:
+                    if original_frame_idx >= action_config[cur_subtask]["end_frame"]:
                         cur_subtask += 1
                     frame_task_instruction = f"{task_instruction} | {action_config[cur_subtask]['action_text']}"
-                dataset.add_frame(frame_data, frame_task_instruction)
+                dataset.add_frame(frame_data, frame_task_instruction, timestamp=timestamp)
             try:
                 dataset.save_episode(videos=videos, action_config=action_config)
             except Exception as e:
@@ -299,7 +321,10 @@ def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], num_th
                 dataset.episode_buffer = None
                 continue
             gc.collect()
-            print(f"process done for {json_file.stem}, episode_id {eid}, len {len(frames)}")
+            num_sampled_frames = len(range(0, len(frames), frame_stride))
+            log_message = f"process done for {json_file.stem}, episode_id {eid}, original_frames: {len(frames)}, sampled_frames: {num_sampled_frames}"
+            print(log_message)
+            write_episode_log(log_file, log_message)
     else:
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = []
@@ -326,14 +351,19 @@ def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], num_th
                 action_config = task_info[eid]["label_info"]["action_config"]
                 
                 cur_subtask = 0
-                for timestamp, frame_data in enumerate(frames):
-                    if timestamp < action_config[0]["start_frame"] or timestamp >= action_config[-1]["end_frame"]:
+                # Sample frames: every 3 frames take 1 (30fps -> 10fps)
+                for original_frame_idx in range(0, len(frames), frame_stride):
+                    frame_data = frames[original_frame_idx]
+                    # Calculate timestamp using source fps (30) for video extraction
+                    timestamp = original_frame_idx / source_fps
+                    
+                    if original_frame_idx < action_config[0]["start_frame"] or original_frame_idx >= action_config[-1]["end_frame"]:
                         frame_task_instruction = task_instruction
                     else:
-                        if timestamp >= action_config[cur_subtask]["end_frame"]:
+                        if original_frame_idx >= action_config[cur_subtask]["end_frame"]:
                             cur_subtask += 1
                         frame_task_instruction = f"{task_instruction} | {action_config[cur_subtask]['action_text']}"
-                    dataset.add_frame(frame_data, frame_task_instruction)
+                    dataset.add_frame(frame_data, frame_task_instruction, timestamp=timestamp)
                 try:
                     dataset.save_episode(videos=videos, action_config=action_config)
                 except Exception as e:
@@ -343,7 +373,10 @@ def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], num_th
                     dataset.episode_buffer = None
                     continue
                 gc.collect()
-                print(f"process done for {json_file.stem}, episode_id {eid}, len {len(frames)}")
+                num_sampled_frames = len(range(0, len(frames), frame_stride))
+                log_message = f"process done for {json_file.stem}, episode_id {eid}, original_frames: {len(frames)}, sampled_frames: {num_sampled_frames}"
+                print(log_message)
+                write_episode_log(log_file, log_message)
 
 
 def main(
@@ -355,6 +388,7 @@ def main(
     num_threads_per_task: int,
     save_depth: bool,
     debug: bool = False,
+    log_file: str = "out.log",
 ):
     tasks = get_all_tasks(src_path, output_path)
 
@@ -372,22 +406,26 @@ def main(
     if task_ids:
         tasks = filter(lambda task: task[0].stem in task_ids, tasks)
 
+    log_file_path = Path(log_file)
+    log_file_path.parent.mkdir(parents=True, exist_ok=True)
+    if log_file_path.exists():
+        log_file_path.unlink()
+    log_file_path.touch() 
+    
     if debug:
-        save_as_lerobot_dataset(agibot_world_config, next(tasks), num_threads_per_task, save_depth, debug)
+        save_as_lerobot_dataset(agibot_world_config, next(tasks), num_threads_per_task, save_depth, debug, log_file_path)
     else:
-        
-        # 给子进程设置环境变量，ProcessPoolExecutor 默认会继承当前进程的 env
-        os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
-        os.environ["HF_DATASETS_DISABLE_PROGRESS_BARS"] = "TRUE"
-        os.environ["OMP_NUM_THREADS"] = "1"
-        os.environ["LD_PRELOAD"] = str(Path(__file__).resolve().parent / "libtcmalloc.so.4.5.3")
-
-        # 用本机 CPU 数估算可用并行度
         cpus = os.cpu_count() or 1
-        print(f"Available CPUs: {cpus}, num_cpus_per_task: {cpus_per_task}")
+        print(f"Available CPUs: {cpus}, cpus_per_task: {cpus_per_task}")
 
-        # 模拟 Ray 里 num_cpus_per_task 的概念：每个任务占多少 CPU，就把 worker 数压一下
-        max_workers = max(1, cpus // cpus_per_task)
+        theoretical_max = max(1, cpus // cpus_per_task)
+        MAX_WORKERS_LIMIT = 32
+        
+        max_workers = min(theoretical_max, MAX_WORKERS_LIMIT)
+        
+        if theoretical_max > MAX_WORKERS_LIMIT:
+            print(f"Warning: Theoretical max workers ({theoretical_max}) exceeds limit ({MAX_WORKERS_LIMIT}), "
+                  f"limiting to {MAX_WORKERS_LIMIT} to avoid I/O bottleneck and memory pressure")
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             future_to_task = {}
@@ -399,6 +437,7 @@ def main(
                     num_threads_per_task,
                     save_depth,
                     debug,
+                    log_file_path,
                 )
                 future_to_task[future] = task[0].stem
 
@@ -452,6 +491,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-threads-per-task", type=int, default=2)
     parser.add_argument("--save-depth", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--log-file", type=str, default="out.log", help="Path to log file for episode processing status")
     args = parser.parse_args()
 
     main(**vars(args))
