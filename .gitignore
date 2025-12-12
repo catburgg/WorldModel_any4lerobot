@@ -171,3 +171,4 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+agibot2lerobot/output.txt

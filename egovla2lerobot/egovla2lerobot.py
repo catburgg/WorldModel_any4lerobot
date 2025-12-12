@@ -45,6 +45,7 @@ STATE_KEY = "observation.state"
 ACTION_KEY = "action"
 EEF_LEFT_WRIST_KEY = "eef.left.wrist"
 EEF_RIGHT_WRIST_KEY = "eef.right.wrist"
+EEF_STATE_KEY = "eef.state"
 EEF_LEFT_HAND_KEY = "eef.left.hand"
 EEF_RIGHT_HAND_KEY = "eef.right.hand"
 CAMERA_INTRINSIC_KEY = "camera.intrinsic"
@@ -371,8 +372,9 @@ def extract_eef_wrist_hand(sample: dict) -> Dict[str, np.ndarray]:
         right_trans, right_rot_matrix = right_cam_pose[:3, 3], right_cam_pose[:3, :3]
         left_rpy = R.from_matrix(left_rot_matrix).as_euler('xyz', degrees=False).astype(np.float32)
         right_rpy = R.from_matrix(right_rot_matrix).as_euler('xyz', degrees=False).astype(np.float32)
-        result[EEF_LEFT_WRIST_KEY] = np.concatenate([left_trans, left_rpy])
-        result[EEF_RIGHT_WRIST_KEY] = np.concatenate([right_trans, right_rpy])
+        left_wrist = np.concatenate([left_trans, left_rpy])
+        right_wrist = np.concatenate([right_trans, right_rpy])
+        result[EEF_STATE_KEY] = np.concatenate([left_wrist, right_wrist])
     else:
         raise ValueError
     if "current_left_mano_kps3d" in sample:
@@ -436,6 +438,7 @@ def build_features(state_dim: int, action_dim: int, image_shape: tuple = (384, 3
         VIDEO_KEY: video_feature,
         STATE_KEY: {"dtype": "float32", "shape": (state_dim,)},
         ACTION_KEY: {"dtype": "float32", "shape": (action_dim,)},
+        EEF_STATE_KEY: {"dtype": "float32", "shape": (12,)},
         EEF_LEFT_WRIST_KEY: {"dtype": "float32", "shape": (6,)},
         EEF_RIGHT_WRIST_KEY: {"dtype": "float32", "shape": (6,)},
         EEF_LEFT_HAND_KEY: {"dtype": "float32", "shape": (21, 3)},
