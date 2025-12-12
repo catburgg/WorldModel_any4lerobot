@@ -182,3 +182,12 @@ task_414, exception details: list index out of range
 task_438, exception details: list index out of range
 task_454, exception details: list index out of range
 task_351, exception details: 
+task_547, exception details: The feature 'actions.effector.position' of shape '(2,)' does not have the expected shape '(12,)'.
+The feature 'observation.states.effector.position' of shape '(2,)' does not have the expected shape '(12,)'.
+
+task_548, exception details: The feature 'actions.effector.position' of shape '(2,)' does not have the expected shape '(12,)'.
+The feature 'observation.states.effector.position' of shape '(2,)' does not have the expected shape '(12,)'.
+
+task_591, exception details: The feature 'actions.effector.position' of shape '(2,)' does not have the expected shape '(12,)'.
+The feature 'observation.states.effector.position' of shape '(2,)' does not have the expected shape '(12,)'.
+
