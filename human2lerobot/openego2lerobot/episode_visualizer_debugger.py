@@ -41,7 +41,7 @@ def project_points(points_3d, K, world_to_camera_transform):
     
     return np.stack([u, v], axis=1)
 
-def visualize_dataset(data_dict, output_path="debug_output.mp4", max_frames=400):
+def visualize_dataset(data_dict, output_path="/mnt/afs/lvjiangran/zhuwenxuan/any4lerobot/human2lerobot/openego2lerobot/debug_output.mp4", max_frames=400):
     # 1. Setup Video Reader
     video_path = data_dict["video_paths"]["observation.images.top_head"]
     cap = cv2.VideoCapture(video_path)
