@@ -1,9 +1,13 @@
 from typing import Tuple
 import numpy as np
 from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Slerp
+from scipy.interpolate import interp1d
+from scipy.ndimage import zoom
 from projectaria_tools.core import calibration
 from projectaria_tools.core.sensor_data import ImageDataRecord
 from projectaria_tools.core.stream_id import StreamId
+import h5py
 
 class AriaCamera:
     """Get data from the original aria camera"""
@@ -82,3 +86,70 @@ def se3_to_6d(se3_obj):
     roll, pitch, yaw = rot.as_euler('xyz', degrees=False)
 
     return np.array((x, y, z, roll, pitch, yaw))
+
+def resample_poses(
+    source_poses: np.ndarray, 
+    target_num_frames: int
+) -> np.ndarray:
+    
+    source_num_frames = len(source_poses)
+    
+    source_times_norm = np.linspace(0, 1, source_num_frames)
+    target_times_norm = np.linspace(0, 1, target_num_frames)
+    
+    trans_src = source_poses[:, :3, 3] 
+    rot_src_matrices = source_poses[:, :3, :3]
+    rot_src_obj = Rotation.from_matrix(rot_src_matrices)
+    
+    interp_trans = interp1d(source_times_norm, trans_src, axis=0, kind='linear')
+    trans_interp = interp_trans(target_times_norm)
+    
+    slerp = Slerp(source_times_norm, rot_src_obj)
+    rot_interp_obj = slerp(target_times_norm)
+    rot_interp_matrices = rot_interp_obj.as_matrix()
+    
+    new_poses = np.eye(4).reshape(1, 4, 4).repeat(target_num_frames, axis=0)
+    new_poses[:, :3, :3] = rot_interp_matrices
+    new_poses[:, :3, 3] = trans_interp
+    
+    return new_poses
+
+def resample_motion(A: np.ndarray, target_length: int) -> np.ndarray:
+
+    current_length = A.shape[0]
+    
+    zoom_factor = target_length / current_length
+    
+    factors = (zoom_factor, 1, 1)
+    
+    output = zoom(A, factors, order=1) 
+    
+    return output
+
+def convert_cam_to_world(pts, poses):
+    N, J, _ = pts.shape
+    
+    ones = np.ones((N, J, 1))
+    pts_homo = np.concatenate([pts, ones], axis=-1)
+    
+    pts_world_homo = np.einsum('nij, nkj -> nki', poses, pts_homo)
+    pts_world = pts_world_homo[..., :3]
+    
+    return pts_world
+
+
+def load_hdf5_to_dict(h5_input):
+    data = {}
+    if not hasattr(h5_input, 'items'):
+        raise TypeError(f"Input must be an h5py object or file path, not {type(h5_input)}")
+
+    for key, item in h5_input.items():
+        if isinstance(item, h5py.Group):
+            data[key] = load_hdf5_to_dict(item)
+        elif isinstance(item, h5py.Dataset):
+            value = item[()]
+            if isinstance(value, np.ndarray) and value.ndim == 0:
+                value = value.item()
+            data[key] = value
+            
+    return data

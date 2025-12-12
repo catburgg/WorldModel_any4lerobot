@@ -7,8 +7,8 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 # --- Configuration ---
 # Path to your local dataset folder (the folder containing info.json)
-LOCAL_DATASET_PATH = "/mnt/afs/zhuwenxuan/hot3d2lero/result" 
-EPISODE_INDEX = 0
+LOCAL_DATASET_PATH = "/mnt/afs/lvjiangran/zhuwenxuan/holoassist/result" 
+EPISODE_INDEX = 3
 OUTPUT_FILENAME = "episode_viz.mp4"
 
 def project_points(points_3d, intrinsics, extrinsics):
