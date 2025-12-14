@@ -374,6 +374,8 @@ def extract_eef_wrist_hand(sample: dict) -> Dict[str, np.ndarray]:
         right_rpy = R.from_matrix(right_rot_matrix).as_euler('xyz', degrees=False).astype(np.float32)
         left_wrist = np.concatenate([left_trans, left_rpy])
         right_wrist = np.concatenate([right_trans, right_rpy])
+        result[EEF_LEFT_WRIST_KEY] = left_wrist
+        result[EEF_RIGHT_WRIST_KEY] = right_wrist
         result[EEF_STATE_KEY] = np.concatenate([left_wrist, right_wrist])
     else:
         raise ValueError
@@ -512,7 +514,7 @@ def convert_episode_to_lerobot(
     for i, idx in enumerate(sampled_indices):
         sample = dataset[idx]
         next_sampled_idx = sampled_indices[min(i + 1, len(sampled_indices) - 1)]
-        next_sample = dataset[next_sampled_idx] if next_sampled_idx != idx else None
+        next_sample = dataset[next_sampled_idx] if next_sampled_idx != idx else None        
         frame_data = {
             STATE_KEY: extract_state_from_sample(sample),
             ACTION_KEY: extract_action_from_sample(sample, next_sample),
