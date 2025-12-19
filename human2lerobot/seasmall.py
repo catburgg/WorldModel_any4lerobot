@@ -14,7 +14,7 @@ import numpy as np
 import torch
 from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 import warnings
 import argparse 
 
@@ -167,6 +167,13 @@ class SeaSmallConverter:
                 valid_indices.append(idx)
         if not valid_indices: return
 
+        FIX_CAM_MAT = np.array([
+            [1,  0,  0, 0],
+            [0, -1,  0, 0], 
+            [0,  0,  1, 0], 
+            [0,  0,  0, 1]
+        ], dtype=np.float32)
+
         for idx in valid_indices:
             img_ts, img = raw_frames[idx]
             h_idx = np.searchsorted(hand_ts_arr, img_ts)
@@ -181,7 +188,7 @@ class SeaSmallConverter:
                 T_c2w = np.eye(4, dtype=np.float32)
                 T_c2w[:3, :3] = R.from_quat(quat_c).as_matrix()
                 T_c2w[:3, 3] = pos_c
-                extrinsic = np.linalg.inv(T_c2w)
+                extrinsic = FIX_CAM_MAT @ np.linalg.inv(T_c2w)
 
             l_wrist, l_hand, l_raw = self._process_hand_side(left_kps_raw, "left")
             r_wrist, r_hand, r_raw = self._process_hand_side(right_kps_raw, "right")
