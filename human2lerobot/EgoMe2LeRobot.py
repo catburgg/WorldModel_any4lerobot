@@ -287,10 +287,10 @@ def main():
     output_root = Path(output_root)
 
     # 删除已有的数据集，应当只在测试时保留
-    if output_root.exists():
-        shutil.rmtree(output_root)
-        print(f"Removed existing dataset at {output_root}")
-    output_root.mkdir(parents=True, exist_ok=True)
+    # if output_root.exists():
+    #     shutil.rmtree(output_root)
+    #     print(f"Removed existing dataset at {output_root}")
+    # output_root.mkdir(parents=True, exist_ok=True)
         
     converter = EgoMe2LeRobot(
         input_root=input_root,
