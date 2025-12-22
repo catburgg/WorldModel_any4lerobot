@@ -432,6 +432,8 @@ def extract_original_hand_data(sample: dict) -> Dict[str, np.ndarray]:
             value = sample[key]
             if key == "curent_qpos":
                 result["current_qpos"] = np.array(value, dtype=np.float32)
+            elif "parameters" in key:
+                result[key] = norm_hand_dof(np.array(value, dtype=np.float32))
             elif isinstance(value, (list, tuple)):
                 result[key] = np.array(value, dtype=np.float32)
             elif isinstance(value, np.ndarray):
