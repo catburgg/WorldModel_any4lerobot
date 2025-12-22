@@ -33,7 +33,7 @@ class ConvertibleEpisode:
                 p.unlink()
 
 class BaseDatasetConverter(abc.ABC):
-    def __init__(self, output_root: str, repo_id: str, fps: int, robot_type: str, num_workers: int):
+    def __init__(self, output_root: str, repo_id: str, fps: int, robot_type: str, num_workers: int, has_main_task: int):
         self.output_root = Path(output_root)
         self.repo_id = repo_id
         self.num_workers = num_workers
@@ -41,11 +41,7 @@ class BaseDatasetConverter(abc.ABC):
         self.fps = fps
         self.robot_type = robot_type
         self.temp_dir = self.output_root / "tmp"
-        
-        self.vocab_db = {
-            "task_text": {},   # eg: {"Pick up phones": 0, "Open door": 1}
-            "action_text": {}
-        }
+        self.task_list = []
 
     @abc.abstractmethod
     def get_dataset_features(self) -> Dict:
@@ -80,7 +76,8 @@ class BaseDatasetConverter(abc.ABC):
                 if episode:
                     self._register_episode(episode)
         
-        self._save_vocabularies()
+        self._modify_task()
+        
 
     def _worker_wrapper(self, entry):
         try:
@@ -89,50 +86,25 @@ class BaseDatasetConverter(abc.ABC):
             print(f"Worker Error on {entry}: {e}")
             return None
 
-    def _encode_text_feature(self, raw_data: Union[str, List[str]], vocab_key: str, num_frames: int) -> torch.Tensor:
-        """
-        Converts raw strings to indices using the self.vocab_db.
-        """
-        mapping = self.vocab_db[vocab_key]
-        
-        if isinstance(raw_data, str):
-            data_list = [raw_data] * num_frames
-        else:
-            if len(raw_data) != num_frames:
-                raise ValueError(f"Length of {vocab_key} list ({len(raw_data)}) != num_frames ({num_frames})")
-            data_list = raw_data
-
-        indices = []
-        for text in data_list:
-            if text not in mapping:
-                mapping[text] = len(mapping)
-            indices.append(mapping[text])
-            
-        return torch.tensor(indices, dtype=torch.int64).unsqueeze(1)
-
     def _register_episode(self, episode: ConvertibleEpisode):
         """
         Injects data into LeRobot. 
         Converts text -> int here (Main Process) to avoid Race Conditions.
         """
         
-        task_indices = self._encode_text_feature(
-            episode.task_text, "task_text", episode.num_frames
-        )
-        episode.data_dict["annotation.language.task_text"] = task_indices
-
-        action_indices = self._encode_text_feature(
-            episode.action_text, "action_text", episode.num_frames
-        )
-        episode.data_dict["annotation.language.action_text"] = action_indices
-
         task_name = episode.task_name
+
+        self.task_list.append(episode.task_text)
 
         for i in range(episode.num_frames):
             frame_data = {
                 key: tensor[i] for key, tensor in episode.data_dict.items()
             }
-            self.dataset.add_frame(frame_data, task=task_name)
+            # print(episode.action_text)
+            if isinstance(episode.action_text, str):
+                self.dataset.add_frame(frame_data, task=episode.action_text)
+            else:
+                self.dataset.add_frame(frame_data, task=episode.action_text[i])
 
         self.dataset.save_episode()
 
@@ -145,16 +117,13 @@ class BaseDatasetConverter(abc.ABC):
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(temp_path, dest_path)
 
-    def _save_vocabularies(self):
-        """Saves the String <-> Int mappings to the dataset root."""
-        vocab_path = self.output_root / "vocabularies.json"
-        inverted_db = {}
-        for key, mapping in self.vocab_db.items():
-            inverted_db[key] = {
-                "s2i": mapping,
-                "i2s": {v: k for k, v in mapping.items()}
-            }
-            
-        with open(vocab_path, 'w') as f:
-            json.dump(inverted_db, f, indent=2)
-        print(f"Vocabularies saved to {vocab_path}")
+    def _modify_task(self):
+        path = self.output_root / "meta" / "episodes.jsonl"
+        with open(path, 'r') as f:
+            records = [json.loads(line) for line in f]
+        length = len(self.task_list)
+        for i in range(length):
+            records[i]['tasks'] = self.task_list[i]
+        with open(path, 'w') as f:
+            for entry in records:
+                f.write(json.dumps(entry) + '\n') 

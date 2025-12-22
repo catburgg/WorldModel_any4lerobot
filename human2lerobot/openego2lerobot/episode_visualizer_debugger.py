@@ -96,6 +96,10 @@ def visualize_dataset(data_dict, output_path="/mnt/afs/lvjiangran/zhuwenxuan/any
                 
                 # Project
                 pixels = project_points(hand_kps, K_curr, extrinsic)
+                # pixels_2d = data_dict[f"eef.{side}.2d"][t]
+
+                #if t==157:
+                #    print(pixels-pixels_2d)
                 
                 # Draw
                 for (x, y) in pixels:

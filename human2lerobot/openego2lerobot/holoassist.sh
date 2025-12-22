@@ -1,7 +1,9 @@
-rm -rf /mnt/afs/lvjiangran/zhuwenxuan/holoassist/result
+rm -rf /mnt/project/world_model/data/HumanData/HoloAssist1
 
-python convert_holoassist.py\
-                --input_path /mnt/afs/lvjiangran/zhuwenxuan/holoassist/holoassist_data\
-                --output_path /mnt/afs/lvjiangran/zhuwenxuan/holoassist/result\
-                --repo_id "tmp/tmp"\
-                --num_workers 16
+python /mnt/afs/lvjiangran/zhuwenxuan/any4lerobot/human2lerobot/openego2lerobot/convert_holoassist.py\
+    --input_path /mnt/project/public/world_model/dataset/holoassist/holoassist_data\
+    --output_path /mnt/project/world_model/data/HumanData/HoloAssist1\
+    --repo_id "/mnt/afs/lvjiangran/zhuwenxuan/tmp/tmp"\
+    --num_workers 24
+
+# ls /mnt/project/world_model/data/HumanData/HoloAssist1
