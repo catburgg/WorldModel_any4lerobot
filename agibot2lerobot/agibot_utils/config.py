@@ -279,6 +279,9 @@ AgiBotWorld_BETA_DEXHAND_CONFIG = {
             },
         },
     },
+    "eef": {
+        **AgiBotWorld_BETA_GRIPPER_CONFIG["eef"],
+    }
 }
 
 AgiBotWorld_BETA_TACTILE_CONFIG = {

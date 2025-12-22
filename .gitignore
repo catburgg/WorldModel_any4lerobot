@@ -171,5 +171,4 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
-
-# hot3d dataset
+agibot2lerobot/output.txt
