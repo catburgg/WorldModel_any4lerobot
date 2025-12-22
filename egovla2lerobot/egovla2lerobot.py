@@ -83,6 +83,35 @@ OTV_MAIN_CAM_TRANSFORMATION = np.eye(4, dtype=np.float32)
 OTV_MAIN_CAM_TRANSFORMATION[:3, :3] = ISAAC_LAB_CAMERA_FRAME_CHANGE @ _rot_matrix
 OTV_MAIN_CAM_TRANSFORMATION[:3, 3] = OTV_MAIN_CAM_TRANS
 
+mano_per_dim_min = [
+  -1,
+  1.5,
+  -2,
+  -3,
+  -1.5,
+  -1
+]
+mano_per_dim_min = torch.concat([
+  torch.Tensor(mano_per_dim_min),
+  -4 * torch.ones(9),
+])
+mano_per_dim_max = [
+  2.2,
+  3.5,
+  1,
+  0.5,
+  4,
+  5
+]
+mano_per_dim_max = torch.concat([
+  torch.Tensor(mano_per_dim_max),
+  4 * torch.ones(9),
+])
+mano_range = mano_per_dim_max - mano_per_dim_min
+
+def norm_hand_dof(hand_dof):
+  hand_dof = torch.from_numpy(hand_dof)
+  return (hand_dof - mano_per_dim_min) / mano_range
 
 def sample_images(input):
     if type(input) is str:
@@ -246,7 +275,9 @@ class EgoVLADataset(LeRobotDataset):
         for key in self.meta.video_keys:
             video_path = self.root / self.meta.get_video_file_path(episode_index, key)
             video_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(videos[key], video_path)
+            source_path = Path(videos[key])
+            if source_path.resolve() != video_path.resolve():
+                shutil.copyfile(source_path, video_path)
             episode_buffer[key] = str(video_path)
         ep_stats = compute_episode_stats(episode_buffer, self.features)
         for key in self.meta.video_keys:
@@ -317,6 +348,8 @@ def extract_state_from_sample(sample: dict) -> np.ndarray:
     if "current_left_mano_parameters" in sample and "current_right_mano_parameters" in sample:
         left_dof = np.array(sample["current_left_mano_parameters"], dtype=np.float32).reshape(-1)
         right_dof = np.array(sample["current_right_mano_parameters"], dtype=np.float32).reshape(-1)
+        left_dof = norm_hand_dof(left_dof)
+        right_dof = norm_hand_dof(right_dof)
         state_parts.append(np.concatenate([left_dof[:15], right_dof[:15]]))
     else:
         # state_parts.append(np.zeros(30, dtype=np.float32))
@@ -524,9 +557,8 @@ def convert_episode_to_lerobot(
             CAMERA_EXTRINSIC_KEY: OTV_MAIN_CAM_TRANSFORMATION.flatten(),
         }
         frames.append((frame_data, sample.get("language_label", "")))
-    videos_dir = output_root / "videos"
-    videos_dir.mkdir(parents=True, exist_ok=True)
-    video_path = videos_dir / f"episode_{episode_index:06d}.mp4"
+    video_path = output_root / lerobot_dataset.meta.get_video_file_path(episode_index, VIDEO_KEY)
+    video_path.parent.mkdir(parents=True, exist_ok=True)
     images_to_video(all_images, video_path, fps=source_fps)
     for i, (frame_data, instruction) in enumerate(frames):
         lerobot_dataset.add_frame(frame_data, task=instruction, timestamp=i / target_fps)
