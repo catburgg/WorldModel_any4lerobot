@@ -8,8 +8,6 @@ os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
-import torch
-import torchvision
 from pathlib import Path
 import numpy as np
 import json
@@ -18,14 +16,14 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetad
 from moviepy import VideoFileClip
 from moviepy.video.fx import Resize
 
-from utils import se3_to_6d, load_hdf5_to_dict, resample_poses, resample_motion, convert_cam_to_world
+from utils import se3_to_6d, load_hdf5_to_dict, resample_poses, resample_motion, convert_cam_to_world, resize_intrinsics
 from schemas import HoloassistLeRobotFeatures
 from lerobot_converter import BaseDatasetConverter, ConvertibleEpisode
 from episode_visualizer_debugger import visualize_dataset
 
 class HoloassistConverter(BaseDatasetConverter):
     def __init__(self, output_root, repo_id, fps = 10, num_workers=1):
-        super().__init__(output_root, repo_id, fps, "dex", num_workers)
+        super().__init__(output_root, repo_id, fps, "dex", num_workers, 1)
 
         self.width = 896
         self.height = 504
@@ -55,6 +53,8 @@ class HoloassistConverter(BaseDatasetConverter):
         with np.load(cam_path) as cam_data:
             cam_poses = cam_data['extrinsics']
             task = cam_data['task']
+            ow = cam_data['metadata'][0]
+            oh = cam_data['metadata'][1]
 
         action = annotation['actions']
         intrinsics = joint['intrinsics']
@@ -67,6 +67,7 @@ class HoloassistConverter(BaseDatasetConverter):
 
         # --- 1. Save video
         clip = VideoFileClip(video_path)
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         temp_vid_path = self.temp_dir / f"{episode_name}.mp4"
         clip_resized = clip.with_effects([Resize(new_size=(896, 504))]).with_fps(10)
         clip_resized.write_videofile(temp_vid_path, codec='libx264', audio=False, logger=None)
@@ -90,16 +91,24 @@ class HoloassistConverter(BaseDatasetConverter):
         # --- 4. Get language discription ---
 
         task = annotation['task']
-        sentence = ""
+        action_text = []
         for x in action:
-            sentence = sentence + str(x['label']) + ", "
+            l = x['start_timestamp']
+            r = x['end_timestamp']
+            sentence = x['label']
+            while len(action_text) < l * self.fps:
+                action_text.append("")
+            while len(action_text) < r * self.fps:
+                action_text.append(sentence)
+        while len(action_text) < length:
+            action_text.append("")
         
         return ConvertibleEpisode(
             episode_identifier=episode_name,
             num_frames=length,
             task_name=episode_name,
             task_text=task,
-            action_text=sentence,
+            action_text=action_text,
             data_dict={
                 "camera.intrinsic": np.tile(K[np.newaxis, :, :], (length, 1, 1)),
                 "camera.extrinsic": cam_poses,
@@ -124,13 +133,19 @@ def main(
 ):
     converter = HoloassistConverter(output_path,repo_id,10,num_workers)
 
+
     subpaths = [
-        (input_path / item.name) for item in input_path.iterdir() 
-        if item.is_dir()
+        (input_path / item.name) 
+        for item in input_path.iterdir() 
+        if item.is_dir() 
+        #and item.name.startswith("demo_")
+        #and int(item.name.split('_')[-1]) < 1800
     ]
-    converter.run(subpaths)
-    # x = converter.process_entry(input_path / "demo_0000")
-    # print(x.data_dict["camera.extrinsic"])
+    # converter.run(subpaths)
+    x = converter.run(subpaths)
+    # print(input_path / "demo_2422")
+    # x = converter.process_entry(input_path / "demo_2422")
+    #3 print(x.action_text)
     # dd = x.data_dict
     # dd["video_paths"] = x.video_paths
     # visualize_dataset(dd)

@@ -137,6 +137,21 @@ def convert_cam_to_world(pts, poses):
     
     return pts_world
 
+def resize_intrinsics(K, orig_w, orig_h, new_w, new_h):
+    
+    scale_x = new_w / orig_w
+    scale_y = new_h / orig_h
+    
+    K_new = K.copy()
+    
+    K_new[0, 0] *= scale_x  # fx
+    K_new[1, 1] *= scale_y  # fy
+    
+    K_new[0, 2] *= scale_x  # cx
+    K_new[1, 2] *= scale_y  # cy
+    
+    return K_new
+
 
 def load_hdf5_to_dict(h5_input):
     data = {}

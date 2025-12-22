@@ -32,7 +32,7 @@ from lerobot_converter import BaseDatasetConverter, ConvertibleEpisode
 
 class Hot3DConverter(BaseDatasetConverter):
     def __init__(self, output_root, repo_id, assets_file_path, mano_file_path, fps = 10, num_workers=1):
-        super().__init__(output_root, repo_id, fps, "dex", num_workers)
+        super().__init__(output_root, repo_id, fps, "dex", num_workers, 1)
 
         self.assets_file_path = Path(assets_file_path)
         self.width = 512
@@ -151,7 +151,7 @@ class Hot3DConverter(BaseDatasetConverter):
             episode_identifier=str(episode_name),
             num_frames=length,
             task_name=Path(input_path).stem,
-            task_text="Manipulating objects",
+            task_text=sentence,
             action_text=sentence,
             data_dict={
                 "camera.intrinsic": np.tile(K[np.newaxis, :, :], (length, 1, 1)),
