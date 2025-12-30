@@ -1,3 +1,5 @@
+# /mnt/project/public/public_datasets/RoboMIND
+
 import argparse
 import gc
 import json
@@ -5,13 +7,15 @@ import logging
 import shutil
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pandas as pd
 import ray
 import torch
-from lerobot.common.datasets.compute_stats import aggregate_stats
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
-from lerobot.common.datasets.utils import (
+from tqdm import tqdm
+from lerobot.datasets.compute_stats import aggregate_stats
+from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.datasets.utils import (
     check_timestamps_sync,
     get_episode_data_index,
     validate_episode_buffer,
@@ -20,11 +24,11 @@ from lerobot.common.datasets.utils import (
     write_episode_stats,
     write_info,
 )
-from lerobot.common.datasets.video_utils import get_safe_default_codec
+from lerobot.datasets.video_utils import get_safe_default_codec
 from ray.runtime_env import RuntimeEnv
-from robomind_uitls.configs import ROBOMIND_CONFIG
-from robomind_uitls.lerobot_uitls import compute_episode_stats, generate_features_from_config
-from robomind_uitls.robomind_uitls import load_local_dataset
+from robomind_utils.configs import ROBOMIND_CONFIG
+from robomind_utils.lerobot_utils import compute_episode_stats, generate_features_from_config
+from robomind_utils.robomind_utils import load_local_dataset
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -35,9 +39,9 @@ class RoboMINDDatasetMetadata(LeRobotDatasetMetadata):
         split,
         episode_index: int,
         episode_length: int,
-        episode_tasks: list[str],
+        episode_task: str,
         episode_stats: dict[str, dict],
-        action_config: dict[str, str | dict],
+        # action_config: dict[str, str | dict],
     ) -> None:
         self.info["total_episodes"] += 1
         self.info["total_frames"] += episode_length
@@ -59,9 +63,9 @@ class RoboMINDDatasetMetadata(LeRobotDatasetMetadata):
 
         episode_dict = {
             "episode_index": episode_index,
-            "tasks": episode_tasks,
+            "tasks": episode_task,
             "length": episode_length,
-            **({"action_config": action_config} if action_config else {}),
+            # **({"action_config": action_config} if action_config else {}),
         }
         self.episodes[episode_index] = episode_dict
         write_episode(episode_dict, self.root)
@@ -162,7 +166,7 @@ class RoboMINDDataset(LeRobotDataset):
         self.episode_buffer["size"] += 1
 
     def save_episode(
-        self, split, action_config: dict, episode_data: dict | None = None, keep_images: bool = False
+        self, split, episode_task: str, episode_data: dict | None = None, keep_images: bool = False
     ) -> None:
         """
         This will save to disk the current episode in self.episode_buffer.
@@ -207,12 +211,10 @@ class RoboMINDDataset(LeRobotDataset):
         ep_stats = compute_episode_stats(episode_buffer, self.features)
 
         if len(self.meta.video_keys) > 0:
-            video_paths = self.encode_episode_videos(episode_index)
-            for key in self.meta.video_keys:
-                episode_buffer[key] = video_paths[key]
+            self.encode_episode_videos(episode_index)
 
         # `meta.save_episode` be executed after encoding the videos
-        self.meta.save_episode(split, episode_index, episode_length, episode_tasks, ep_stats, action_config)
+        self.meta.save_episode(split, episode_index, episode_length, episode_task, ep_stats)
 
         ep_data_index = get_episode_data_index(self.meta.episodes, [episode_index])
         ep_data_index_np = {k: t.numpy() for k, t in ep_data_index.items()}
@@ -233,13 +235,16 @@ class RoboMINDDataset(LeRobotDataset):
         if not episode_data:  # Reset the buffer
             self.episode_buffer = self.create_episode_buffer()
 
-
+'''
+Get all tasks of given embodiment from source path
+'''
 def get_all_tasks(src_path: Path, output_path: Path, embodiment: str):
     output_path = output_path / src_path.name / embodiment
     src_path = src_path / f"h5_{embodiment}"
 
     if src_path.exists():
-        df = pd.read_csv(src_path.parent.parent / "RoboMIND_v1_2_instr.csv", index_col=0).drop_duplicates()
+        # Read ./static/RoboMIND_v1_2_instr.csv to get instruction of each task
+        df = pd.read_csv(src_path.parent.parent / "static" / "RoboMIND_v1_2_instr.csv", index_col=0).drop_duplicates()
         instruction_dict = df.set_index("task")["instruction"].to_dict()
         for task_type in src_path.iterdir():
             yield (
@@ -249,10 +254,60 @@ def get_all_tasks(src_path: Path, output_path: Path, embodiment: str):
                 instruction_dict[task_type.name],
             )
 
+'''
+Try to get a frame's task from per-frame steps annotation.
+If per-frame annotation is not available, return episode task.
+'''
+def get_frame_task(frame_idx, steps, default_task):
+    if not steps:
+        return default_task
+    for step in steps:
+        try:
+            start_str = step["start_frame"]
+            end_str = step["end_frame"]
+            start_idx = int(start_str.split("_")[-1].split(".")[0])
+            end_idx = int(end_str.split("_")[-1].split(".")[0])
 
-def save_as_lerobot_dataset(task: tuple[dict, Path, str], src_path, benchmark, embodiment, save_depth):
+            if start_idx <= frame_idx <= end_idx:
+                return step["step_description"]
+        except (ValueError, IndexError, KeyError):
+            continue
+    return default_task
+
+'''
+Get source video fps from hdf5 episode path
+'''
+def get_source_fps(episode_path: Path, benchmark: str):
+    try:
+        path_str = str(episode_path)
+        if benchmark in path_str:
+            # Construct video directory path
+            # .../benchmark/.../data/trajectory.hdf5 -> .../videos/.../data/
+            video_dir_str = path_str.replace(benchmark, "videos").replace("trajectory.hdf5", "")
+            video_dir = Path(video_dir_str)
+
+            if video_dir.exists():
+                # Find any mp4 file
+                mp4_files = list(video_dir.glob("*.mp4"))
+                if mp4_files:
+                    cap = cv2.VideoCapture(str(mp4_files[0]))
+                    if cap.isOpened():
+                        fps = cap.get(cv2.CAP_PROP_FPS)
+                        cap.release()
+                        if fps > 0:
+                            return fps
+    except Exception as e:
+        logging.warning(f"Failed to get source FPS from video: {e}")
+    # Default fps
+    return 30
+
+'''
+Convert RoboMIND to LeRobot for a single embodiment and a single task of that embodiment, under given benchmark
+'''
+def save_as_lerobot_dataset(task: tuple[dict, Path, str], src_path, benchmark, embodiment, save_depth, fps, pbar_actor=None):
     task_type, splits, local_dir, task_instruction = task
 
+    # Load LeRobot config
     config = ROBOMIND_CONFIG[embodiment]
     # HACK:
     # 1. not consistent image shape...
@@ -281,6 +336,7 @@ def save_as_lerobot_dataset(task: tuple[dict, Path, str], src_path, benchmark, e
                     for value in config["images"].values():
                         value["shape"] = (720, 1280) + (value["shape"][2],)
 
+    # Translate config into LeRobot features
     features = generate_features_from_config(config)
 
     if local_dir.exists():
@@ -292,14 +348,19 @@ def save_as_lerobot_dataset(task: tuple[dict, Path, str], src_path, benchmark, e
     dataset: RoboMINDDataset = RoboMINDDataset.create(
         repo_id=f"{embodiment}/{local_dir.name}",
         root=local_dir,
-        fps=30,
+        fps=fps,
         robot_type=embodiment,
         features=features,
     )
 
+    source_fps = None
+    step = 1
+
     logging.info(f"start processing for {benchmark}, {embodiment}, {task_type}, saving to {local_dir}")
+    # Process each split (train, val)
     for split, path in splits.items():
-        action_config_path = src_path / "language_description_annotation_json" / f"h5_{embodiment}.json"
+        # Load per frame annotation if exists
+        action_config_path = src_path / "static" / "language_description_annotation_json" / f"h5_{embodiment}.json"
         if action_config_path.exists():
             action_config = json.load(open(action_config_path))
             action_config = {
@@ -309,19 +370,56 @@ def save_as_lerobot_dataset(task: tuple[dict, Path, str], src_path, benchmark, e
             }
         else:
             action_config = {}
+        # Process each episode
         for episode_path in path.glob("**/trajectory.hdf5"):
-            status, raw_dataset, err = load_local_dataset(episode_path, config, save_depth, bgr2rgb)
+            # If source_fps is not determined yet, detect it from video
+            if source_fps is None:
+                source_fps = get_source_fps(episode_path, benchmark)
+                step = max(1, int(source_fps // fps))
+                logging.info(f"Detected source FPS: {source_fps}, using step: {step}")
+
+            status, raw_dataset, err = load_local_dataset(episode_path, config, save_depth, bgr2rgb, robot_type=embodiment)
             if status and len(raw_dataset) >= 50:
-                for frame_data in raw_dataset:
-                    dataset.add_frame(frame_data, task_instruction)
-                dataset.save_episode(split, action_config.get(episode_path.parent.parent.name, {}))
+                # Try to get per-frame annotation
+                episode_key = episode_path.parent.parent.name
+                episode_annotation = action_config.get(episode_key, {})
+                steps = episode_annotation.get("steps", []) if isinstance(episode_annotation, dict) else []
+
+                for i, frame_data in enumerate(raw_dataset):
+                    # Downsample
+                    if i % step != 0:
+                        continue
+                    # Get frame annotation
+                    current_task = get_frame_task(i, steps, task_instruction)
+                    dataset.add_frame(frame_data, current_task)
+                dataset.save_episode(split, task_instruction)
                 logging.info(f"process done for {path}, len {len(raw_dataset)}")
             else:
                 logging.warning(f"Skipped {episode_path}: len of dataset:{len(raw_dataset)} or {str(err)}")
             gc.collect()
+            
+            if pbar_actor:
+                pbar_actor.update.remote(1)
 
     del dataset
 
+@ray.remote
+class ProgressBarActor:
+    def __init__(self, total):
+        self.pbar = tqdm(total=total, desc="Processing HDF5 files")
+
+    def update(self, n=1):
+        self.pbar.update(n)
+
+    def close(self):
+        self.pbar.close()
+
+def count_hdf5_files(task: tuple[dict, Path, str]):
+    _, splits, _, _ = task
+    count = 0
+    for path in splits.values():
+        count += len(list(path.glob("**/trajectory.hdf5")))
+    return count
 
 def main(
     src_path: Path,
@@ -329,13 +427,17 @@ def main(
     benchmark: str,
     embodiments: list[str],
     cpus_per_task: int,
+    num_cpus: int | None,
     save_depth: bool,
+    fps: int,
     debug: bool = False,
 ):
     if debug:
+        # If debug is on, only process the first embodiment without ray
         tasks = get_all_tasks(src_path / benchmark, output_path, embodiments[0])
-        save_as_lerobot_dataset(next(tasks), src_path, benchmark, embodiments[0], save_depth)
+        save_as_lerobot_dataset(next(tasks), src_path, benchmark, embodiments[0], save_depth, fps)
     else:
+        # Multi-processing with ray
         runtime_env = RuntimeEnv(
             env_vars={
                 "HDF5_USE_FILE_LOCKING": "FALSE",
@@ -343,18 +445,28 @@ def main(
                 "LD_PRELOAD": str(Path(__file__).resolve().parent / "libtcmalloc.so.4.5.3"),
             }
         )
-        ray.init(runtime_env=runtime_env)
+        ray.init(num_cpus=num_cpus, runtime_env=runtime_env)
         resources = ray.available_resources()
-        cpus = int(resources["CPU"])
+        cpus = int(resources.get("CPU", num_cpus if num_cpus else 0))
 
         logging.info(f"Available CPUs: {cpus}, num_cpus_per_task: {cpus_per_task}")
         remote_task = ray.remote(save_as_lerobot_dataset).options(num_cpus=cpus_per_task)
 
-        futures = []
+        all_tasks = []
         for embodiment in embodiments:
-            tasks = get_all_tasks(src_path / benchmark, output_path, embodiment)
-            for task in tasks:
-                futures.append((task[1], remote_task.remote(task, src_path, benchmark, embodiment, save_depth)))
+            tasks = list(get_all_tasks(src_path / benchmark, output_path, embodiment))
+            all_tasks.extend([(task, embodiment) for task in tasks])
+
+        total_hdf5_files = 0
+        logging.info("Counting total HDF5 files...")
+        for task, _ in tqdm(all_tasks, desc="Counting files"):
+            total_hdf5_files += count_hdf5_files(task)
+        
+        pbar_actor = ProgressBarActor.remote(total_hdf5_files)
+
+        futures = []
+        for task, embodiment in all_tasks:
+            futures.append((task[1], remote_task.remote(task, src_path, benchmark, embodiment, save_depth, fps, pbar_actor)))
 
         for task_path, future in futures:
             try:
@@ -363,17 +475,31 @@ def main(
                 logging.error(f"Exception occurred for {task_path['train']}")
                 with open("output.txt", "a") as f:
                     f.write(f"{task_path['train']}, exception details: {str(e)}\n")
+        
+        pbar_actor.close.remote()
         ray.shutdown()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--src-path", type=Path, required=True)
+
+    '''
+    The whole dataset is split into 3 benchmarks
+    benchmark1_0_compressed contains:
+      agilex_3rgb, franka_1rgb, franka_3rgb, simulation,
+      tienkung_gello_1rgb, tienkung_xsens_1rgb, ur_1rgb
+    benchmark1_1_compressed contains:
+      agilex_3rgb, franka_1rgb, franka_fr3_dual, sim_franka_3rgb, sim_tienkung_1rgb
+      tienkung_gello_1rgb, tienkung_prod1_gello_1rgb, tienkung_xsens_1rgb, ur_1rgb
+    benchmark1_2_compressed contains:
+      franka_3rgb, sim_franka_3rgb
+    '''
     parser.add_argument(
         "--benchmark",
         type=str,
-        choices=["benchmark1_0_release", "benchmark1_1_release", "benchmark1_2_release"],
-        default="benchmark1_1_release",
+        choices=["benchmark1_0_compressed", "benchmark1_1_compressed", "benchmark1_2_compressed"],
+        default="benchmark1_0_compressed",
     )
     parser.add_argument("--output-path", type=Path, required=True)
     parser.add_argument(
@@ -390,13 +516,18 @@ if __name__ == "__main__":
                 "tienkung_prod1_gello_1rgb",
                 "tienkung_xsens_1rgb",
                 "ur_1rgb",
+                "simulation",
+                "sim_franka_3rgb",
+                "sim_tienkung_1rgb",
             ]
         ),
         default=["agilex_3rgb"],
     )
     parser.add_argument("--cpus-per-task", type=int, default=2)
-    parser.add_argument("--save-depth", action="store_true")
-    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--num-cpus", type=int, default=None)
+    parser.add_argument("--save-depth", action="store_true") # Save depth images or not
+    parser.add_argument("--fps", type=int, default=10)
+    parser.add_argument("--debug", action="store_true") # Run in debug mode (no ray, only work embodiments[0])
     args = parser.parse_args()
 
     main(**vars(args))

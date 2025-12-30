@@ -1,7 +1,7 @@
 import numpy as np
 import torchvision
-from lerobot.common.datasets.compute_stats import auto_downsample_height_width, get_feature_stats, sample_indices
-from lerobot.common.datasets.utils import load_image_as_numpy
+from lerobot.datasets.compute_stats import auto_downsample_height_width, get_feature_stats, sample_indices
+from lerobot.datasets.utils import load_image_as_numpy
 
 torchvision.set_video_backend("pyav")
 
@@ -11,9 +11,7 @@ def generate_features_from_config(AgiBotWorld_CONFIG):
     for key, value in AgiBotWorld_CONFIG["images"].items():
         features[f"observation.images.{key}"] = value
     for key, value in AgiBotWorld_CONFIG["states"].items():
-        features[f"observation.states.{key}"] = value
-    for key, value in AgiBotWorld_CONFIG["actions"].items():
-        features[f"actions.{key}"] = value
+        features[f"{key}"] = value
     return features
 
 
