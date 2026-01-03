@@ -229,13 +229,28 @@ def load_local_dataset(episode_path: Path, config: dict, save_depth: bool, bgr2r
             for k in states:
                 states[k] = states[k][:num_frames]
 
-            states["camera.intrinsic"] = np.zeros((num_frames, 9), dtype=np.float32)
-            states["camera.extrinsic"] = np.zeros((num_frames, 16), dtype=np.float32)
+            # states["camera.intrinsic"] = np.zeros((num_frames, 9), dtype=np.float32)
+            # states["camera.extrinsic"] = np.zeros((num_frames, 16), dtype=np.float32)
             
             if camera_key is not None:
                 if robot_type in intrinsic_matrices:
                     states["camera.intrinsic"] = intrinsic_matrices[robot_type].reshape((1, 9)).repeat(num_frames, axis=0)
-        
+
+            if "states" in config:
+                for state_key, state_cfg in config["states"].items():
+                    if state_key in ["task_index", "timestamp"]:
+                        continue
+                    if state_key not in states:
+                        shape = state_cfg["shape"]
+                        states[state_key] = np.zeros((num_frames, *shape), dtype=np.float32)
+
+            if "images" in config:
+                for image_key, image_cfg in config["images"].items():
+                    full_image_key = f"observation.images.{image_key}"
+                    if full_image_key not in images:
+                        shape = image_cfg["shape"]
+                        images[full_image_key] = np.zeros((num_frames, *shape), dtype=np.uint8)
+
         num_frames = len(next(iter(states.values())))
         frames = [
             {

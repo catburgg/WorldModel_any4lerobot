@@ -1,5 +1,7 @@
 ## AgileX 3RGB [h5_agilex_3rgb]
 
+rgb_images saved as rgb
+
 end_effector (7d): [x, y, z, r, p, y, gripper]
 joint_position (7d): [base link, ..., end_effector link, gripper]
     Found HDF5 file: ./h5_agilex_3rgb/10_packplate/success_episodes/train/2024_09_18-10_40_22-172952636630221088.00/data/trajectory.hdf5
@@ -57,6 +59,8 @@ joint_position (7d): [base link, ..., end_effector link, gripper]
 
 ## Franka 1RGB [h5_franka_1rgb]
 
+rgb_images saved as bgr
+
 end_effector (6d): [x, y, z, r, p, y]
 joint_position (8d): [base link, ..., end_effector link, gripper]
     Found HDF5 file: ./h5_franka_1rgb/bread_in_basket/success_episodes/train/1014_144602/data/trajectory.hdf5
@@ -79,6 +83,8 @@ joint_position (8d): [base link, ..., end_effector link, gripper]
             Shape: (96, 8), Type: float64
 
 ## Franka 3RGB [h5_franka_3rgb]
+
+rgb_images saved as bgr
 
 ### 3RGB
 
@@ -134,6 +140,8 @@ joint_position (8d): [base link, ..., end_effector link, gripper]
 
 ## Simulation Franka [h5_simulation, h5_sim_franka_3rgb]
 
+rgb_images saved as rgb
+
 end_effector (7d): [x, y, z, quaternions (x,y,z,w)]
 joint_position (8d): [base link, ..., end_effector link, gripper]
 Note: In Isaac Sim simulation, we sample the robot state values at four times the camera frame rate. As a result, the timestep for the RGB images is about one-fourth that of the end-effector and joint position values.
@@ -173,6 +181,8 @@ Note: In Isaac Sim simulation, we sample the robot state values at four times th
 
 ## Tien Kung Gello 1RGB [h5_tienkung_gello_1rgb, h5_tienkung_prod1_gello_1rgb]
 
+rgb_images saved as rgb
+
 joint_position (16d): [left arm (7d), left hand closure (1d), right arm (7d), right hand closure (1d)]
 arm (7d): [base link, ..., end_effector link]
 
@@ -194,6 +204,8 @@ arm (7d): [base link, ..., end_effector link]
             Shape: (1197, 16), Type: float64
 
 ## Tien Kung Xsens 1RGB [h5_tienkung_xsens_1rgb]
+
+rgb_images saved as rgb
 
 end_effector (12d): [left hand (6d), right hand (6d)]
 hand (6d): [little finger, ring finger, middle finger, index finger, thumb0 for bending, thumb1 for rotation]
@@ -225,6 +237,8 @@ For more detail of the Insipre Dexterous hand, please refer to [the dexterous ha
 
 ## UR 1RGB [h5_ur_1rgb]
 
+rgb_images saved as bgr
+
 end_effector (6d): [x, y, z, r, p, y]
 joint_position (7d): [base link, ..., end_effector link, gripper]
     Found HDF5 file: ./h5_ur_1rgb/bread_in_basket_1/success_episodes/train/1014_140258/data/trajectory.hdf5
@@ -248,6 +262,8 @@ joint_position (7d): [base link, ..., end_effector link, gripper]
             Shape: (388, 7), Type: float64
 
 ## Franka Fr3 Dual Arm [h5_franka_fr3_dual]
+
+rgb_images saved as bgr
 
 end_effector (12d): [end_effector_left, end_effector_right]
 end_effector_left/right (6d): [x, y, z, r, p, y]
@@ -287,6 +303,8 @@ joint_position_left/right (16d): [base link, ..., end_effector link, gripper]
             Shape: (407, 16), Type: float64
 
 ## Simulation Tien Kung [h5_sim_tienkung_1rgb]
+
+rgb_images saved as rgb
 
 arm_joint_pos_seq (7d): [base link, ..., end_effector link]
 

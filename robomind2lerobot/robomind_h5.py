@@ -396,6 +396,8 @@ def save_as_lerobot_dataset(task: tuple[dict, Path, str], src_path, benchmark, e
                 logging.info(f"process done for {path}, len {len(raw_dataset)}")
             else:
                 logging.warning(f"Skipped {episode_path}: len of dataset:{len(raw_dataset)} or {str(err)}")
+            
+            del raw_dataset
             gc.collect()
             
             if pbar_actor:
@@ -473,7 +475,7 @@ def main(
                 ray.get(future)
             except Exception as e:
                 logging.error(f"Exception occurred for {task_path['train']}")
-                with open("output.txt", "a") as f:
+                with open(Path(__file__).resolve().parent / "output.txt", "a") as f:
                     f.write(f"{task_path['train']}, exception details: {str(e)}\n")
         
         pbar_actor.close.remote()
