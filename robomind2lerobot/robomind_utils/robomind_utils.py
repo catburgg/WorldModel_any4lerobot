@@ -91,7 +91,11 @@ def load_local_dataset(episode_path: Path, config: dict, save_depth: bool, bgr2r
             elif robot_type == "franka_1rgb" or robot_type == "franka_3rgb":
                 if "observations/rgb_images/camera_top" in file:
                     camera_key = "observations/rgb_images/camera_top"
-
+                elif "observations/rgb_images/camera_left" in file:
+                    camera_key = "observations/rgb_images/camera_left"
+                elif "observations/rgb_images/camera_right" in file:
+                    camera_key = "observations/rgb_images/camera_right"
+                
                 if "puppet/end_effector" in file:
                     eef = np.array(file["puppet/end_effector"], dtype=np.float32)
                     states["eef.left.wrist"] = eef[:, :6]

@@ -336,6 +336,19 @@ def save_as_lerobot_dataset(task: tuple[dict, Path, str], src_path, benchmark, e
                     for value in config["images"].values():
                         value["shape"] = (720, 1280) + (value["shape"][2],)
 
+            case "franka_3rgb":
+                if task_type in (
+                    "2024_09_20_close_cabinet",
+                    "2024_09_20_close_chest",
+                    "2024_09_20_close_the_box",
+                    "2024_09_20_open_cabinet",
+                    "2024_09_20_open_chest",
+                    "2024_09_20_open_the_box",
+                    "2024_09_20_pick_fruit_and_bread"
+                ):
+                    for value in config["images"].values():
+                        value["shape"] = (480, 640) + (value["shape"][2],)
+
     # Translate config into LeRobot features
     features = generate_features_from_config(config)
 
@@ -492,7 +505,7 @@ if __name__ == "__main__":
       agilex_3rgb, franka_1rgb, franka_3rgb, simulation,
       tienkung_gello_1rgb, tienkung_xsens_1rgb, ur_1rgb
     benchmark1_1_compressed contains:
-      agilex_3rgb, franka_1rgb, franka_fr3_dual, sim_franka_3rgb, sim_tienkung_1rgb
+      agilex_3rgb, franka_3rgb, franka_fr3_dual, sim_franka_3rgb, sim_tienkung_1rgb
       tienkung_gello_1rgb, tienkung_prod1_gello_1rgb, tienkung_xsens_1rgb, ur_1rgb
     benchmark1_2_compressed contains:
       franka_3rgb, sim_franka_3rgb
