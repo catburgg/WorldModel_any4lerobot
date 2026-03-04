@@ -1,6 +1,6 @@
 rm -rf /mnt/project/world_model/data/HumanData/hot3d
 
-python /mnt/afs/lvjiangran/zhuwenxuan/any4lerobot/human2lerobot/openego2lerobot/convert_hot3d.py\
+python /mnt/home/lvjiangran/zhuwenxuan/any4lerobot/human2lerobot/openego2lerobot/convert_hot3d.py\
     --input_path /mnt/project/public/world_model/dataset/hot3d/hot3d/hot3d_dataset\
     --output_path /mnt/project/world_model/data/HumanData/hot3d\
     --repo_id "/mnt/afs/lvjiangran/zhuwenxuan/tmp/tmp"\

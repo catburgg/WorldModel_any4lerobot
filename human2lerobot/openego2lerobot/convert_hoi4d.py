@@ -91,13 +91,15 @@ class HOI4DConverter(BaseDatasetConverter):
         print(tail)
 
         # --- 1. Save video
+
         video_path = vid_dir / "image.mp4"
-        clip = VideoFileClip(video_path)
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-        temp_vid_path = self.temp_dir / f"{episode_name}.mp4"
-        clip_resized = clip.with_effects([Resize(new_size=(self.width, self.height))]).with_fps(self.fps)
-        clip_resized.write_videofile(temp_vid_path, codec='libx264', audio=False, logger=None)
-        length = int(clip_resized.duration * clip_resized.fps)
+
+        with VideoFileClip(str(video_path)) as clip:
+            temp_vid_path = self.temp_dir / f"{episode_name}.mp4"
+            clip_resized = clip.with_effects([Resize(new_size=(self.width, self.height))]).with_fps(self.fps)
+            clip_resized.write_videofile(temp_vid_path, codec='libx264', audio=False, logger=None)
+            length = int(clip_resized.duration * clip_resized.fps)
+            clip_resized.close()
 
         # --- 2. Calculate ex&intrinsics
 
@@ -183,10 +185,12 @@ def main(
     repo_id: str,
     num_workers: int
 ):
-    converter = HOI4DConverter(input_path, output_path, mano_path, repo_id, 15, num_workers)
+    converter = HOI4DConverter(input_path, output_path, mano_path, repo_id, 10, num_workers)
 
     with open(input_path / "release.txt", "r") as f:
         paths = [input_path / line.strip() for line in f if line.strip()]
+
+    
 
     converter.run(paths)
     #x = converter.run([])

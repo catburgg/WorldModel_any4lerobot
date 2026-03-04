@@ -7,8 +7,8 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 # --- Configuration ---
 # Update this path to your local dataset location
-LOCAL_DATASET_PATH = "/mnt/afs/lvjiangran/zhuwenxuan/hot3d/result" 
-EPISODE_INDEX = 0
+LOCAL_DATASET_PATH = "/mnt/project/world_model/data/HumanData/HOI4D" 
+EPISODE_INDEX = 36
 OUTPUT_FILENAME = "wrist_pose_viz.mp4"
 AXIS_LENGTH = 0.1  # Length of axes in meters (Adjust if lines are too big/small)
 
@@ -100,17 +100,18 @@ def draw_pose_axes(img_bgr, pose_6d, K, E, axis_len=0.1):
 def main():
     # 1. Load Local Dataset
     print(f"Loading local dataset from: {LOCAL_DATASET_PATH}")
-    dataset = LeRobotDataset(root=LOCAL_DATASET_PATH, repo_id="dummy_id") 
+    dataset = LeRobotDataset(
+        root=LOCAL_DATASET_PATH, 
+        repo_id="dummy_id", 
+        episodes=[EPISODE_INDEX]
+    )
 
-    # 2. Get Episode Range
-    from_idx = dataset.episode_data_index["from"][EPISODE_INDEX]
-    to_idx = dataset.episode_data_index["to"][EPISODE_INDEX]
-    
-    print(f"Processing Episode {EPISODE_INDEX} (Frames {from_idx} to {to_idx})...")
+    print(f"Processing Episode {EPISODE_INDEX} (Total frames: {len(dataset)})...")
 
     writer = None
 
-    for frame_idx in range(from_idx, to_idx):
+    for frame_idx in range(min(len(dataset), 1000)):
+        frame_data = dataset[frame_idx]
         item = dataset[frame_idx]
 
         # --- A. Prepare Image ---
@@ -127,8 +128,7 @@ def main():
         if writer is None:
             h, w = frame_bgr.shape[:2]
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            # Assuming 30fps, adjust if your dataset is different
-            writer = cv2.VideoWriter(OUTPUT_FILENAME, fourcc, 30.0, (w, h))
+            writer = cv2.VideoWriter(OUTPUT_FILENAME, fourcc, 10.0, (w, h))
 
         # --- B. Get Matrices ---
         K = item["camera.intrinsic"].numpy()   # (3, 3)
@@ -178,7 +178,7 @@ def main():
         # --- E. Write Frame ---
         writer.write(frame_bgr)
 
-        if (frame_idx - from_idx) % 50 == 0:
+        if (frame_idx) % 50 == 0:
             print(f"Processed frame {frame_idx}...")
 
     if writer:

@@ -66,12 +66,12 @@ class HoloassistConverter(BaseDatasetConverter):
         episode_name = str(input_path.stem)+"_"+str(task)
 
         # --- 1. Save video
-        clip = VideoFileClip(video_path)
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-        temp_vid_path = self.temp_dir / f"{episode_name}.mp4"
-        clip_resized = clip.with_effects([Resize(new_size=(896, 504))]).with_fps(10)
-        clip_resized.write_videofile(temp_vid_path, codec='libx264', audio=False, logger=None)
-        length = int(clip_resized.duration * clip_resized.fps)
+        with VideoFileClip(str(video_path)) as clip:
+            temp_vid_path = self.temp_dir / f"{episode_name}.mp4"
+            clip_resized = clip.with_effects([Resize(new_size=(896, 504))]).with_fps(10)
+            clip_resized.write_videofile(temp_vid_path, codec='libx264', audio=False, logger=None)
+            length = int(clip_resized.duration * clip_resized.fps)
+            clip_resized.close()
 
         # --- 2. Calculate ex&intrinsics
         K = joint['intrinsics']
@@ -142,6 +142,7 @@ def main(
         #and int(item.name.split('_')[-1]) < 1800
     ]
     # converter.run(subpaths)
+    # print(subpaths[:10])
     x = converter.run(subpaths)
     # print(input_path / "demo_2422")
     # x = converter.process_entry(input_path / "demo_2422")

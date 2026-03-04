@@ -741,7 +741,7 @@ class IterableNamespace(SimpleNamespace):
 
 
 def validate_frame(frame: dict, features: dict):
-    expected_features = set(features) - set(DEFAULT_FEATURES) - {"observation.images.top_head"}
+    expected_features = set(features) - set(DEFAULT_FEATURES) - {"observation.images.top_head_1"} - {"observation.images.top_head"} - {"observation.images.top_head_2"}
     actual_features = set(frame)
 
     error_message = validate_features_presence(actual_features, expected_features)

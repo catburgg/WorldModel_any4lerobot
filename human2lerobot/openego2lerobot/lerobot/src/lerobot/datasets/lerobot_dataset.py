@@ -474,14 +474,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         # Load actual data
         try:
-            if force_cache_sync:
-                raise FileNotFoundError
-            assert all((self.root / fpath).is_file() for fpath in self.get_episodes_file_paths())
+        #     assert all((self.root / fpath).is_file() for fpath in self.get_episodes_file_paths())
             self.hf_dataset = self.load_hf_dataset()
         except (AssertionError, FileNotFoundError, NotADirectoryError):
-            self.revision = get_safe_version(self.repo_id, self.revision)
-            self.download_episodes(download_videos)
-            self.hf_dataset = self.load_hf_dataset()
+            raise FileNotFoundError
 
         self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
 
